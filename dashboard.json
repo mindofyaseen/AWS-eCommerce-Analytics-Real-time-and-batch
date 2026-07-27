@@ -1,0 +1,73 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Suspicious User Events (DDoS Alerts)",
+        "metrics": [
+          ["eComm/DDoS", "SuspiciousUserEvents", {"stat": "Sum", "period": 60, "label": "Total Flagged Events/min"}]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "period": 60
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Lambda Alert Processor Invocations",
+        "metrics": [
+          ["AWS/Lambda", "Invocations", "FunctionName", "ecomm-alert-processor", {"stat": "Sum", "period": 60}],
+          ["AWS/Lambda", "Errors", "FunctionName", "ecomm-alert-processor", {"stat": "Sum", "period": 60, "color": "#d62728"}]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "period": 60
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Kinesis Alerts Stream - Incoming Records",
+        "metrics": [
+          ["AWS/Kinesis", "IncomingRecords", "StreamName", "ecomm-alerts-stream", {"stat": "Sum", "period": 60}]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "period": 60
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Lambda Duration (ms)",
+        "metrics": [
+          ["AWS/Lambda", "Duration", "FunctionName", "ecomm-alert-processor", {"stat": "Average", "period": 60}]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "period": 60
+      }
+    }
+  ]
+}
