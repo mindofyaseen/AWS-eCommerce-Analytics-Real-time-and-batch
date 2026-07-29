@@ -1,247 +1,527 @@
-﻿# 🗺️ AWS eCommerce Analytics — Pura Project Flow (Roman Urdu me)
+﻿# 🗺️ AWS eCommerce Analytics — Har Component Ki Detail (Live Running State)
 
-> Yeh file project ka poora flow explain karti hai — kya service kya kaam karti hai, data kaise flow karta hai, aur har step ka result kya hota hai.
-
----
-
-## 🧠 Pehle Samajhlo — Yeh Project Kya Hai?
-
-Ham ek **eCommerce website ka data** (views, cart, purchases) real-time aur batch dono tareeqon se process karte hain:
-
-- **Real-Time Pipeline** → Bot/DDoS attackers ko pakadta hai (jaise 50 events ek minute me)
-- **Batch Pipeline** → Historical analytics (kitne visitors, kya kharida, kaun sa brand popular)
+> ⚠️ Yeh file **actual running values** ke saath hai — jo abhi AWS pe chal raha hai, wohi yahan dikh raha hai.
+> Region: us-east-1 (N. Virginia) | Account: 989864147584
 
 ---
 
-## 📊 FULL ARCHITECTURE FLOW
+## 🌐 POORA SYSTEM EK NAZAR ME
 
 ```
-                        ┌─────────────────────────────────────┐
-                        │   LOCAL APP (Python - VS Code)       │
-                        │   simulate_kinesis_stream.ipynb      │
-                        │   simulate_stream.ipynb              │
-                        │   (CSV data padhta hai aur bhejta hai)│
-                        └──────────┬──────────────┬───────────┘
-                                   │              │
-                    ┌──────────────┘              └────────────────┐
-                    ▼                                              ▼
-    ┌───────────────────────────┐              ┌───────────────────────────┐
-    │   Kinesis Data Stream      │              │   Amazon Data Firehose    │
-    │   ecomm-events-stream      │              │   ecomm-firehose-str      │
-    │   (Real-time events)       │              │   (Buffer + compress)     │
-    │   On-Demand capacity       │              │   GZIP format             │
-    └────────────┬──────────────┘              └─────────────┬─────────────┘
-                 │                                           │
-                 ▼                                           ▼
-    ┌───────────────────────────┐              ┌───────────────────────────┐
-    │   Apache Flink (Zeppelin)  │              │   Amazon S3               │
-    │   ecomm-ddos-detector      │              │   raw-stream/ folder      │
-    │                            │              │   (GZIP .gz files)        │
-    │   SQL Query:               │              └─────────────┬─────────────┘
-    │   1-min tumbling window    │                            │
-    │   COUNT(*) > 5 per user    │                            ▼
-    │   = SUSPICIOUS!            │              ┌───────────────────────────┐
-    └────────────┬──────────────┘              │   AWS Glue Crawlers       │
-                 │                             │   ecomm-raw-crawler        │
-                 │ Anomaly detected!            │   ecomm-rawstream-crawler  │
-                 ▼                             │   ecomm-processed-crawler  │
-    ┌───────────────────────────┐              │   (Catalog banata hai)    │
-    │   Kinesis Data Stream      │              └─────────────┬─────────────┘
-    │   ecomm-alerts-stream      │                            │
-    │   (Flink output)           │                            ▼
-    └────────────┬──────────────┘              ┌───────────────────────────┐
-                 │                             │   Glue ETL Job            │
-                 │ Lambda trigger!             │   ecomm-etl-to-parquet    │
-                 ▼                             │   (JSON → Parquet format) │
-    ┌───────────────────────────┐              │   partitioned by event_type│
-    │   AWS Lambda               │              └─────────────┬─────────────┘
-    │   ecomm-alert-processor    │                            │
-    │   (Python 3.12, 256MB)     │                            ▼
-    └──────┬──────────┬─────────┘              ┌───────────────────────────┐
-           │          │         │              │   Amazon Athena            │
-           ▼          ▼         ▼              │   (4 Analytical Views)     │
-    ┌──────────┐ ┌──────────┐ ┌──────────┐    │   v_unique_visitors_daily  │
-    │ DynamoDB │ │CloudWatch│ │   SNS    │    │   v_cart_abandonment       │
-    │          │ │          │ │  Email   │    │   v_top_categories_hourly  │
-    │ecomm-    │ │ecomm-    │ │ecomm-    │    │   v_brand_insights         │
-    │suspicious│ │ddos-     │ │ddos-     │    └─────────────┬─────────────┘
-    │-users    │ │monitor   │ │alerts    │                  │
-    │(NoSQL)   │ │(Dashboard│ │(Email    │                  ▼
-    └──────────┘ └──────────┘ │alert)    │    ┌───────────────────────────┐
-                              └──────────┘    │   Amazon QuickSight       │
-                                              │   (Visual Dashboards)     │
-                                              │   Line chart, Pie, Heatmap│
-                                              └───────────────────────────┘
+╔══════════════════════════════════════════════════════════════════════╗
+║              AWS eCommerce Analytics Platform                        ║
+║                    us-east-1 (N. Virginia)                          ║
+╠══════════════════════════════════════════════════════════════════════╣
+║                                                                      ║
+║  [LOCAL]              [REAL-TIME PIPELINE]                           ║
+║  Python App    ──►  Kinesis Events Stream                            ║
+║  VS Code            ecomm-events-stream  ──►  Apache Flink           ║
+║                          (ACTIVE)              ecomm-ddos-detector   ║
+║  Python App    ──►  Firehose                   (RUNNING)             ║
+║  VS Code            ecomm-firehose-str    ──►  Kinesis Alerts Stream ║
+║                          (ACTIVE)              ecomm-alerts-stream   ║
+║                              │                     (ACTIVE)          ║
+║                              ▼                         │             ║
+║                    [BATCH PIPELINE]                    ▼             ║
+║                    S3 Bucket                      AWS Lambda         ║
+║            ecomm-analytics-yaseen-2026        ecomm-alert-processor  ║
+║                    (raw-stream/)                   (Active)          ║
+║                          │                    ┌────┼────┐           ║
+║                          ▼                    ▼    ▼    ▼           ║
+║                    AWS Glue                DynamoDB CW  SNS          ║
+║                    ecomm_flink_db          (6 rows) 📊  📧           ║
+║                          │                                           ║
+║                          ▼                                           ║
+║                    Amazon Athena ──► Amazon QuickSight               ║
+║                    (4 views)         (Dashboards)                    ║
+╚══════════════════════════════════════════════════════════════════════╝
 ```
 
 ---
 
-## 🔴 PIPELINE 1 — Real-Time DDoS Detection (Step by Step)
+# 🔴 PIPELINE 1 — REAL-TIME DDoS DETECTION
 
-### Step 1️⃣ — Data Generate Karo (Local Python)
+---
+
+## 🖥️ COMPONENT 1: Local Python App (Data Generator)
+
 ```
-File: simulate_kinesis_stream.ipynb
-Kya karta hai: CSV file padhta hai, events Kinesis stream ko bhejta hai
-Input:  2026-Jun-sample.csv (~100k rows)
-Output: Kinesis ecomm-events-stream me events jaate hain
+TYPE    : Local Script (VS Code me run hoti hai)
+FILES   : simulate_kinesis_stream.ipynb
+          simulate_stream.ipynb
+PURPOSE : CSV data padhti hai aur AWS services ko bhejti hai
 ```
 
-**Example ek event ka:**
+**Kya karta hai:**
+- `2026-Jun-sample.csv` file kholta hai (~100,000 rows)
+- Batches of 20 records bana ke Kinesis ya Firehose ko bhejta hai
+- Har batch ke baad thoda wait karta hai (real traffic feel ke liye)
+
+**Aaj jo data bheja gaya (actual):**
+```
+simulate_kinesis_stream → 300 normal events + 45 bot events
+simulate_stream        → 500 records → Firehose
+```
+
+**Ek sample event jo bheja gaya:**
 ```json
 {
-  "event_time": "2026-07-29 05:30:00 UTC",
-  "event_type": "view",
-  "user_id": "bot_attacker_001",
-  "product_id": "1234567",
-  "brand": "samsung",
-  "price": "450.99"
+  "event_time"    : "2026-07-29 05:30:00 UTC",
+  "event_type"    : "view",
+  "user_id"       : "bot_attacker_001",
+  "product_id"    : "4567890",
+  "category_code" : "electronics.smartphone",
+  "brand"         : "samsung",
+  "price"         : "450.99",
+  "user_session"  : "sess_bot_attacker_001_3"
 }
 ```
 
 ---
 
-### Step 2️⃣ — Apache Flink Processing (Zeppelin Browser)
+## 📡 COMPONENT 2: Amazon Kinesis Data Stream — ecomm-events-stream
+
 ```
-Service: Managed Apache Flink — ecomm-ddos-detector
-Kya karta hai: 1 minute ki window me count karta hai
-Agar kisi user ne 1 minute me > 5 events kiye = SUSPICIOUS
+SERVICE : Amazon Kinesis Data Streams
+NAME    : ecomm-events-stream
+STATUS  : ✅ ACTIVE
+MODE    : ON_DEMAND (auto-scaling)
+SHARDS  : 4 (auto-managed)
+REGION  : us-east-1
+ARN     : arn:aws:kinesis:us-east-1:989864147584:stream/ecomm-events-stream
 ```
 
-**Flink SQL Logic:**
+**Kya karta hai:**
+- Python app se events receive karta hai
+- Data ko real-time buffer karta hai
+- Flink application is stream ko continuously padhti hai
+- ON_DEMAND mode = traffic ke hisaab se automatically scale hota hai
+
+**Flow:**
+```
+Python put_records() ──► Kinesis Shard (buffer) ──► Flink reads LATEST
+```
+
+**Note:** Yeh resource ephemeral hai — session end pe delete karo (billing hoti hai)
+
+---
+
+## ⚡ COMPONENT 3: Apache Flink — ecomm-ddos-detector
+
+```
+SERVICE : Amazon Managed Service for Apache Flink
+NAME    : ecomm-ddos-detector
+STATUS  : ✅ RUNNING
+RUNTIME : ZEPPELIN-FLINK-3_0
+MODE    : INTERACTIVE (Studio Notebook)
+VERSION : 1
+ARN     : arn:aws:kinesisanalytics:us-east-1:989864147584:application/ecomm-ddos-detector
+```
+
+**Kya karta hai:**
+- `ecomm-events-stream` ko continuously read karta hai
+- Har user ke events ek 1-minute tumbling window me count karta hai
+- Agar kisi user ne 1 minute me 5 se zyada events kiye = SUSPICIOUS
+- Alert `ecomm-alerts-stream` ko bhejta hai
+
+**Flink SQL jo run ho raha hai (3 cells — Zeppelin me):**
+
 ```sql
--- Tumbling Window: Har 1 minute me count karo
-SELECT user_id, COUNT(*) as event_count
+-- CELL 1: Source Table Define karo (Kinesis se padhna)
+CREATE TABLE ecomm_events (
+    event_time    VARCHAR,
+    event_type    VARCHAR,
+    product_id    VARCHAR,
+    category_id   VARCHAR,
+    category_code VARCHAR,
+    brand         VARCHAR,
+    price         DOUBLE,
+    user_id       VARCHAR,
+    user_session  VARCHAR,
+    event_arrival_time AS PROCTIME()   -- processing time
+)
+WITH (
+    'connector'             = 'kinesis',
+    'stream'                = 'ecomm-events-stream',
+    'aws.region'            = 'us-east-1',
+    'scan.stream.initpos'   = 'LATEST',
+    'format'                = 'json'
+);
+
+-- CELL 2: Sink Table Define karo (Kinesis ko likhna)
+CREATE TABLE ecomm_alerts_sink (
+    user_id      VARCHAR,
+    event_count  BIGINT,
+    window_start TIMESTAMP(3),
+    window_end   TIMESTAMP(3)
+)
+WITH (
+    'connector' = 'kinesis',
+    'stream'    = 'ecomm-alerts-stream',
+    'aws.region'= 'us-east-1',
+    'format'    = 'json'
+);
+
+-- CELL 3: Anomaly Detection Query (yeh continuously chalta rehta hai)
+INSERT INTO ecomm_alerts_sink
+SELECT
+    user_id,
+    COUNT(*)                                                         AS event_count,
+    TUMBLE_START(event_arrival_time, INTERVAL '1' MINUTE)           AS window_start,
+    TUMBLE_END(event_arrival_time, INTERVAL '1' MINUTE)             AS window_end
 FROM ecomm_events
-GROUP BY user_id, TUMBLE(event_arrival_time, INTERVAL '1' MINUTE)
-HAVING COUNT(*) > 5   -- 5 se zyada = Bot!
+GROUP BY
+    user_id,
+    TUMBLE(event_arrival_time, INTERVAL '1' MINUTE)
+HAVING COUNT(*) > 5;   -- 5 se zyada = bot/attacker!
 ```
 
-**Aaj run hua result (real):**
-- bot_attacker_001 → 15 events/min → FLAGGED ✅
-- bot_attacker_002 → 15 events/min → FLAGGED ✅
-- Normal user → 2 events/min → SAFE ✅
-
----
-
-### Step 3️⃣ — Alerts Stream
+**Real example — aaj kya detect hua:**
 ```
-Service: Kinesis ecomm-alerts-stream
-Kya karta hai: Flink ka output yahan aata hai
-Format: {user_id, event_count, window_start, window_end}
+bot_attacker_001 → 15 events in 1 min → FLAGGED → alert sent
+bot_attacker_002 → 15 events in 1 min → FLAGGED → alert sent
+bot_attacker_003 → 15 events in 1 min → FLAGGED → alert sent
+normal_user_xyz  → 2  events in 1 min → SAFE    → no alert
 ```
 
 ---
 
-### Step 4️⃣ — Lambda (Auto Trigger)
+## 📡 COMPONENT 4: Amazon Kinesis Data Stream — ecomm-alerts-stream
+
 ```
-Service: AWS Lambda — ecomm-alert-processor
-Kya karta hai: Kinesis alerts-stream se auto-trigger hota hai
-3 kaam karta hai simultaneously:
-  1. DynamoDB me record save karo
-  2. CloudWatch metric publish karo
-  3. SNS email alert bhejo
-Runtime: Python 3.12, 256MB RAM, 30sec timeout
+SERVICE : Amazon Kinesis Data Streams
+NAME    : ecomm-alerts-stream
+STATUS  : ✅ ACTIVE
+MODE    : ON_DEMAND (auto-scaling)
+SHARDS  : 4 (auto-managed)
+ARN     : arn:aws:kinesis:us-east-1:989864147584:stream/ecomm-alerts-stream
 ```
 
-**Lambda Code ka kaam:**
+**Kya karta hai:**
+- Flink ka output receive karta hai (flagged users)
+- Lambda function is stream se auto-trigger hoti hai
+- Data format:
+```json
+{
+  "user_id"      : "bot_attacker_001",
+  "event_count"  : 15,
+  "window_start" : "2026-07-29 05:30:00",
+  "window_end"   : "2026-07-29 05:31:00"
+}
+```
+
+---
+
+## λ COMPONENT 5: AWS Lambda — ecomm-alert-processor
+
+```
+SERVICE  : AWS Lambda
+NAME     : ecomm-alert-processor
+STATUS   : ✅ Active
+RUNTIME  : Python 3.12
+MEMORY   : 256 MB
+TIMEOUT  : 30 seconds
+HANDLER  : lambda_alert_processor.lambda_handler
+TRIGGER  : Kinesis ecomm-alerts-stream (BatchSize: 10, State: Enabled)
+ROLE     : LambdaAlertProcessorRole
+ARN      : arn:aws:lambda:us-east-1:989864147584:function:ecomm-alert-processor
+LOG GROUP: /aws/lambda/ecomm-alert-processor
+```
+
+**Kya karta hai:**
+- `ecomm-alerts-stream` me nayi records aate hi automatically trigger hoti hai
+- Ek saath 3 kaam karti hai:
+
 ```python
-# Record decode karo
-payload = json.loads(base64.b64decode(record["kinesis"]["data"]))
+# 1️⃣ DynamoDB me suspicious user save karo
+table.put_item(Item={
+    "user_id"     : "bot_user_001",
+    "window_start": "2026-07-29 05:30:00",
+    "event_count" : 42,
+    "window_end"  : "2026-07-29 05:31:00",
+    "flagged_at"  : "2026-07-29T05:31:58.231466+00:00"
+})
 
-# 1. DynamoDB me save
-table.put_item(Item={"user_id": "bot_user_001", "event_count": 42, ...})
+# 2️⃣ CloudWatch metric publish karo
+cloudwatch.put_metric_data(
+    Namespace  = "eComm/DDoS",
+    MetricData = [{"MetricName": "SuspiciousUserEvents", "Value": 42}]
+)
 
-# 2. CloudWatch metric
-cloudwatch.put_metric_data(Namespace="eComm/DDoS", ...)
+# 3️⃣ Email alert SNS se bhejo
+sns.publish(
+    TopicArn = "arn:aws:sns:us-east-1:989864147584:ecomm-ddos-alerts",
+    Subject  = "DDoS Alert: User bot_user_001 flagged",
+    Message  = "42 events in 1 minute detected!"
+)
+```
 
-# 3. Email alert
-sns.publish(TopicArn="...", Message="Suspicious User Detected!")
+**Aaj ki actual Lambda log:**
+```
+START RequestId: da6265ab-7a3f-434c-a62e-a7710d1ddf99
+[OK] Processed user_id=bot_user_003, event_count=23
+END RequestId: da6265ab-7a3f-434c-a62e-a7710d1ddf99
+Duration: 360.52 ms | Billed: 863 ms | Memory: 97 MB used
 ```
 
 ---
 
-### Step 5️⃣ — Results (3 Jagah)
+## 🗃️ COMPONENT 6: Amazon DynamoDB — ecomm-suspicious-users
 
 ```
-A) DynamoDB Table: ecomm-suspicious-users
-   ┌──────────────────┬──────────────┬─────────────┬─────────────────────────┐
-   │ user_id          │ event_count  │ window_start│ flagged_at              │
-   ├──────────────────┼──────────────┼─────────────┼─────────────────────────┤
-   │ bot_user_001     │ 42           │ 05:30:00    │ 2026-07-29T05:31:58Z    │
-   │ bot_user_002     │ 87           │ 05:30:00    │ 2026-07-29T05:31:58Z    │
-   │ bot_user_003     │ 23           │ 05:30:00    │ 2026-07-29T05:31:58Z    │
-   └──────────────────┴──────────────┴─────────────┴─────────────────────────┘
-
-B) CloudWatch Dashboard: ecomm-ddos-monitor
-   - SuspiciousUserEvents metric spike dikhai deta hai
-   - Lambda invocations/errors graph
-
-C) SNS Email: mindofyaseen@gmail.com
-   Subject: "DDoS Alert: User bot_user_001 flagged"
-   Body: 42 events in 1 minute detected!
+SERVICE      : Amazon DynamoDB
+TABLE NAME   : ecomm-suspicious-users
+STATUS       : ✅ ACTIVE
+BILLING      : PAY_PER_REQUEST (sirf use pe charge)
+PRIMARY KEY  : user_id (HASH) + window_start (RANGE)
+ARN          : arn:aws:dynamodb:us-east-1:989864147584:table/ecomm-suspicious-users
 ```
 
----
+**Kya karta hai:**
+- Lambda ke processed alerts store karta hai
+- PK: user_id = same user ko dobara track kar sako
+- SK: window_start = kab pakda gaya record rakha jata hai
 
-## 🟢 PIPELINE 2 — Batch Analytics (Step by Step)
-
-### Step 1️⃣ — Firehose me Data Bhejo
+**Abhi table me jo data hai (live):**
 ```
-File: simulate_stream.ipynb
-Service: Amazon Data Firehose — ecomm-firehose-str
-Kya karta hai: Data buffer karta hai (5MB ya 60 sec), phir S3 pe GZIP compress kar ke store karta hai
-```
-
-**Aaj run hua result:**
-```
-500 records → Firehose → S3 raw-stream/ → 11.7 KiB .gz file
-Path: s3://ecomm-analytics-yaseen-2026/raw-stream/2026/07/29/05/ecomm-firehose-str-*.gz
+┌──────────────────┬─────────────┬──────────────────────────────────┐
+│ user_id          │ event_count │ flagged_at                       │
+├──────────────────┼─────────────┼──────────────────────────────────┤
+│ bot_user_001     │ 42          │ 2026-07-29T05:31:58.231466+00:00 │
+│ bot_user_002     │ 87          │ 2026-07-29T05:31:58.231542+00:00 │
+│ bot_user_003     │ 23          │ 2026-07-29T05:31:58.243100+00:00 │
+│ bot_user_777     │ 18          │ 2026-07-28T11:00:49.699105+00:00 │
+│ bot_user_888     │ 25          │ 2026-07-28T11:00:49.959130+00:00 │
+│ test_user_999    │ 12          │ 2026-07-28T10:59:52.337248+00:00 │
+└──────────────────┴─────────────┴──────────────────────────────────┘
+Total: 6 records (3 aaj + 3 pichle session se)
 ```
 
 ---
 
-### Step 2️⃣ — Glue Crawlers (Catalog Banao)
-```
-3 Crawlers:
-  ecomm-raw-crawler       → raw/ folder scan karta hai (CSV)
-  ecomm-rawstream-crawler → raw-stream/ folder (GZIP JSON)
-  ecomm-processed-crawler → processed/ folder (Parquet)
+## 📊 COMPONENT 7: Amazon CloudWatch — ecomm-ddos-monitor
 
-Result: ecomm_flink_db database me tables aur schema auto-detect hoti hai
+```
+SERVICE   : Amazon CloudWatch
+DASHBOARD : ecomm-ddos-monitor
+NAMESPACE : eComm/DDoS
+METRIC    : SuspiciousUserEvents
+STATUS    : ✅ Active
+```
+
+**Kya karta hai:**
+- Lambda har alert pe ek metric point publish karta hai
+- Dashboard me 4 widgets hain:
+  1. SuspiciousUserEvents — real-time spike graph
+  2. Lambda Invocations + Errors
+  3. Kinesis Records (ecomm-alerts-stream)
+  4. Lambda Duration (milliseconds)
+
+**Console me kaise dekhen:**
+```
+AWS Console → CloudWatch → Dashboards → ecomm-ddos-monitor
 ```
 
 ---
 
-### Step 3️⃣ — Glue ETL Job (Transform)
+## 📧 COMPONENT 8: Amazon SNS — ecomm-ddos-alerts
+
 ```
-File: etl_to_parquet.py
-Kya karta hai:
-  Input:  CSV (raw/) → Output: Snappy Parquet (processed/events/)
-  
+SERVICE   : Amazon Simple Notification Service
+TOPIC     : ecomm-ddos-alerts
+ARN       : arn:aws:sns:us-east-1:989864147584:ecomm-ddos-alerts
+PROTOCOL  : email
+ENDPOINT  : mindofyaseen@gmail.com
+STATUS    : Subscription pending confirmation
+```
+
+**Kya karta hai:**
+- Lambda har flagged user pe email bhejta hai
+- Subject: "DDoS Alert: User bot_user_001 flagged"
+- Body me: user_id, event_count, window time, flagged_at
+
+**⚠️ Abhi email confirm nahi ki — inbox me link click karo!**
+
+---
+
+---
+
+# 🟢 PIPELINE 2 — BATCH ANALYTICS
+
+---
+
+## 🔥 COMPONENT 9: Amazon Data Firehose — ecomm-firehose-str
+
+```
+SERVICE      : Amazon Data Firehose
+NAME         : ecomm-firehose-str
+STATUS       : ✅ ACTIVE
+TYPE         : DirectPut (app directly bhejti hai)
+DESTINATION  : S3 — ecomm-analytics-yaseen-2026
+PREFIX       : raw-stream/
+BUFFER SIZE  : 5 MB ya 60 seconds (jo pehle ho)
+COMPRESSION  : GZIP (.gz files)
+ROLE         : FirehoseS3DeliveryRole
+```
+
+**Kya karta hai:**
+- Python app directly records bhejti hai (no Kinesis needed)
+- Data buffer karta hai, phir S3 me GZIP compress kar ke store karta hai
+- Auto-retry on failure
+
+**Aaj bheja gaya (actual):**
+```
+500 records → 25 batches of 20 → GZIP → S3
+File: raw-stream/2026/07/29/05/ecomm-firehose-str-1-2026-07-29-05-32-43-*.gz
+Size: 11.7 KiB
+Time: 10:33:44 PKT (aaj)
+```
+
+---
+
+## 🪣 COMPONENT 10: Amazon S3 — ecomm-analytics-yaseen-2026
+
+```
+SERVICE  : Amazon S3
+BUCKET   : ecomm-analytics-yaseen-2026
+REGION   : us-east-1
+STATUS   : ✅ Active
+```
+
+**Bucket Structure (Folders):**
+```
+ecomm-analytics-yaseen-2026/
+├── raw/                    ← CSV file yahan hai (manually upload ki thi)
+│   └── 2026-Jun-sample.csv    (~100,000 rows, 12.9 MB)
+│
+├── raw-stream/             ← Firehose ka output (GZIP JSON)
+│   └── 2026/07/29/05/
+│       └── ecomm-firehose-str-*.gz  (11.7 KiB — aaj ka)
+│
+├── processed/              ← Glue ETL ka output (Parquet)
+│   └── events/
+│       ├── event_type=view/           (82,390 rows)
+│       ├── event_type=cart/           (13,883 rows)
+│       ├── event_type=purchase/       (2,023 rows)
+│       └── event_type=remove_from_cart/ (1,704 rows)
+│
+├── scripts/                ← Glue ETL Python script
+│   └── etl_to_parquet.py
+│
+└── athena-results/         ← Athena query results (temporary)
+```
+
+---
+
+## 🕷️ COMPONENT 11: AWS Glue — ecomm_flink_db
+
+```
+SERVICE  : AWS Glue Data Catalog
+DATABASE : ecomm_flink_db
+STATUS   : ✅ Active
+ROLE     : GlueCrawlerRole
+REGION   : us-east-1
+```
+
+**Tables in Catalog (live):**
+```
+TABLE NAME              LOCATION                                    TYPE
+──────────────────────────────────────────────────────────────────────────
+raw                   → s3://.../raw/          (CSV — source data)
+raw_stream            → s3://.../raw-stream/   (GZIP JSON — Firehose)
+processed             → s3://.../processed/    (Parquet — ETL output)
+ecomm_events          → null                   (Flink table — virtual)
+v_unique_visitors_daily → (view)               (Athena SQL view)
+v_cart_abandonment    → (view)                 (Athena SQL view)
+v_top_categories_hourly → (view)               (Athena SQL view)
+v_brand_insights      → (view)                 (Athena SQL view)
+```
+
+**3 Crawlers jo chale:**
+```
+ecomm-raw-crawler       → raw/ scan kiya (CSV schema detect)
+ecomm-rawstream-crawler → raw-stream/ scan (JSON schema detect)
+ecomm-processed-crawler → processed/ scan (Parquet schema detect)
+```
+
+**Glue ETL Job:**
+```
+JOB NAME : ecomm-etl-to-parquet
+SCRIPT   : etl_to_parquet.py (s3://.../scripts/)
+INPUT    : ecomm_flink_db.raw (CSV)
+OUTPUT   : s3://.../processed/events/ (Parquet, partitioned by event_type)
+STATUS   : SUCCEEDED (pehle run ho chuka hai)
+
 Transformations:
-  - event_type filter (view/cart/purchase/remove_from_cart sirf)
-  - NULL values hata do (event_time, event_type, user_id)
-  - Timestamp parse (string → datetime)
-  - Partition by event_type (fast queries ke liye)
-
-Result:
-  s3://ecomm-analytics-yaseen-2026/processed/events/
-  ├── event_type=view/      (82,390 rows)
-  ├── event_type=cart/      (13,883 rows)
-  ├── event_type=purchase/  (2,023 rows)
-  └── event_type=remove_from_cart/ (1,704 rows)
+  ✅ event_type filter: sirf view/cart/purchase/remove_from_cart
+  ✅ NULL hata do: event_time, event_type, user_id required
+  ✅ Timestamp parse: string → datetime format
+  ✅ Partition by event_type (fast queries ke liye)
 ```
 
 ---
 
-### Step 4️⃣ — Athena Queries (Analysis)
+## 🔍 COMPONENT 12: Amazon Athena — 4 Analytical Views
+
 ```
-Service: Amazon Athena (serverless SQL)
-Database: ecomm_flink_db
-4 Views already created:
+SERVICE   : Amazon Athena
+DATABASE  : ecomm_flink_db
+ENGINE    : Athena v3 (Presto/Trino based)
+RESULTS   : s3://.../athena-results/
+STATUS    : ✅ Active
 ```
 
-**Aaj run hua Athena result (verified):**
+**4 Views jo create hain:**
+
+### View 1: v_unique_visitors_daily
+```sql
+-- Har din ke unique visitors
+SELECT
+    DATE(event_time) AS event_date,
+    COUNT(DISTINCT user_id) AS unique_visitors
+FROM processed
+GROUP BY DATE(event_time)
+ORDER BY event_date
+```
+
+### View 2: v_cart_abandonment
+```sql
+-- Kितne sessions ne cart me add kiya but purchase nahi kiya
+SELECT
+    user_session,
+    MAX(CASE WHEN event_type = 'cart' THEN 1 ELSE 0 END) AS added_to_cart,
+    MAX(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) AS purchased
+FROM processed
+GROUP BY user_session
+```
+
+### View 3: v_top_categories_hourly
+```sql
+-- Har ghante me kaun sa category zyada dekha gaya
+SELECT
+    HOUR(event_time) AS hour_of_day,
+    category_code,
+    COUNT(*) AS view_count
+FROM processed
+WHERE event_type = 'view'
+GROUP BY HOUR(event_time), category_code
+ORDER BY view_count DESC
+```
+
+### View 4: v_brand_insights
+```sql
+-- Kaun sa brand zyada purchase hua aur avg price kya tha
+SELECT
+    brand,
+    COUNT(*) AS total_purchases,
+    AVG(price) AS avg_price
+FROM processed
+WHERE event_type = 'purchase'
+GROUP BY brand
+ORDER BY total_purchases DESC
+```
+
+**Aaj run hua Athena result (actual):**
 ```
 ┌──────────────┬────────────────────┬──────────────┐
 │ total_events │ event_type         │ unique_users │
@@ -252,116 +532,143 @@ Database: ecomm_flink_db
 │ 1,704        │ remove_from_cart   │ 1,369        │
 └──────────────┴────────────────────┴──────────────┘
 
-Cart Abandonment:
-  - 13,883 sessions cart me add kiya
-  - Sirf 2,023 ne purchase kiya
-  - Cart Abandonment Rate ≈ 85.4%! (normal eCommerce rate)
+Cart Abandonment Rate = (13,883 - 2,023) / 13,883 × 100 = 85.4%
+(Industry average bhi ~70-80% hoti hai — realistic!)
 ```
 
 ---
 
-### Step 5️⃣ — QuickSight Dashboard (Visualization)
-```
-Service: Amazon QuickSight
-Kya karta hai: Athena se directly query le ke visual dashboards banata hai
-
-4 Dashboards:
-  1. Line Chart   → Daily unique visitors trend
-  2. Pie Chart    → Cart abandonment vs purchases
-  3. Heat Map     → Category popularity by hour of day
-  4. Bar Chart    → Brand-wise revenue and avg price
-
-Status: Console pe Athena access enable karna baaki hai (1 step)
-```
-
----
-
-## 🔑 IAM Roles — Permissions ka System
+## 📈 COMPONENT 13: Amazon QuickSight (Pending)
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ IAM Role          → Service    → Permissions            │
-├───────────────────┼────────────┼─────────────────────────┤
-│ FirehoseS3        → Firehose   → S3 put/get/list        │
-│ DeliveryRole      │            │                         │
-├───────────────────┼────────────┼─────────────────────────┤
-│ LambdaAlert       → Lambda     → Kinesis read           │
-│ ProcessorRole     │            │ DynamoDB full access    │
-│                   │            │ SNS publish             │
-│                   │            │ CloudWatch put          │
-├───────────────────┼────────────┼─────────────────────────┤
-│ GlueCrawlerRole   → Glue       → S3 full + Glue service │
-├───────────────────┼────────────┼─────────────────────────┤
-│ aws-quicksight-   → QuickSight → Athena + Glue + S3    │
-│ service-role-v0   │            │                         │
-└───────────────────┴────────────┴─────────────────────────┘
+SERVICE   : Amazon QuickSight
+EDITION   : STANDARD
+USER      : YASEEN-CLI-NEW
+EMAIL     : mindofyaseen@gmail.com
+DATA SRC  : ecomm-athena-source (Athena DirectQuery)
+STATUS    : ⚠️ Subscribed — Athena access enable karna baaki
+```
+
+**4 Datasets (create hone hain):**
+```
+ds-unique-visitors → v_unique_visitors_daily → Line Chart
+ds-cart-abandonment → v_cart_abandonment → Pie Chart
+ds-top-categories → v_top_categories_hourly → Heat Map
+ds-brand-insights → v_brand_insights → Bar Chart
+```
+
+**Ek step baaki:**
+```
+Console → QuickSight → Manage QuickSight
+→ Security & Permissions
+→ Add Athena + S3 bucket ecomm-analytics-yaseen-2026
+→ phir: python create_quicksight_datasets.py
 ```
 
 ---
 
-## 💰 Cost — Kya Kharcha Lagta Hai?
+## 🔐 IAM ROLES — Permissions System
 
 ```
-HOURLY BILLING (session end pe delete karo):
-  ⚡ Kinesis On-Demand Streams  → ~$0.04/hr per stream
-  ⚡ Managed Flink Studio       → ~$0.44/hr (Zeppelin notebooks)
+ROLE NAME                   → TRUST      → POLICIES
+──────────────────────────────────────────────────────────────────
+FirehoseS3DeliveryRole      → Firehose   → S3 put/get/list
+                                           (raw-stream/ prefix)
 
-ZERO IDLE COST (always on, koi kharcha nahi):
-  ✅ S3 Bucket                  → storage use pe hi bill
-  ✅ Lambda                     → requests pe hi bill
-  ✅ DynamoDB Pay-Per-Request   → requests pe hi bill
-  ✅ Glue Data Catalog          → crawl runs pe hi bill
-  ✅ Athena                     → queries pe hi bill
-  ✅ CloudWatch                 → basic monitoring free
-  ✅ SNS                        → first 1M emails free
-```
+LambdaAlertProcessorRole    → Lambda     → AWSLambdaKinesisExecutionRole
+                                           AmazonDynamoDBFullAccess
+                                           AmazonSNSFullAccess
+                                           CloudWatchFullAccess
 
----
+GlueCrawlerRole             → Glue       → AWSGlueServiceRole
+                                           AmazonS3FullAccess
 
-## 📁 Files ka Kaam — Ek Nazar Me
-
-```
-FILE                          → KAAM
-─────────────────────────────────────────────────────────────
-simulate_kinesis_stream.ipynb → CSV → Kinesis ecomm-events-stream
-simulate_stream.ipynb         → CSV → Firehose → S3
-lambda_alert_processor.py     → Alert process → DynamoDB + CW + SNS
-etl_to_parquet.py             → Glue: CSV → Parquet
-create_quicksight_datasets.py → QuickSight me 4 datasets register karo
-zeppelin_setup.py             → Flink SQL reference (browser me manually karna)
-dashboard.json                → CloudWatch dashboard ka backup
-SESSION_STARTUP.md            → Har session start karne ki guide
-PROJECT_FLOW.md               → Yeh file! Poora flow explain karta hai
-─────────────────────────────────────────────────────────────
+aws-quicksight-service-role → QuickSight → QuickSightAthenaS3Access
+-v0                                        (custom policy)
 ```
 
 ---
 
-## ✅ Aaj Kya Run Hua — Live Results
+## 💰 COST — Abhi Kya Chal Raha Hai
 
-| Service | Status | Result |
-|---------|--------|--------|
-| Firehose → S3 | ✅ DONE | 500 records → 11.7 KiB .gz file in S3 |
-| Kinesis Events | ✅ DONE | 300 normal + 45 bot events streamed |
-| Kinesis Alerts | ✅ DONE | 3 mock alerts sent directly |
-| Lambda | ✅ RUNNING | bot_user_001/002/003 processed OK |
-| DynamoDB | ✅ DATA | 6 suspicious users stored |
-| CloudWatch | ✅ METRIC | SuspiciousUserEvents published |
-| Athena | ✅ QUERY | 100k rows queried, 85.4% abandonment |
-| Flink | ✅ RUNNING | ecomm-ddos-detector RUNNING |
+```
+HOURLY BILLING (ABHI RUNNING — session end pe band karo):
+╔══════════════════════════════════════════════════════╗
+║  ecomm-events-stream   ~ $0.04/hr (On-Demand)       ║
+║  ecomm-alerts-stream   ~ $0.04/hr (On-Demand)       ║
+║  ecomm-ddos-detector   ~ $0.44/hr (Flink Studio)    ║
+║  ─────────────────────────────────────────────────  ║
+║  TOTAL RUNNING COST  ≈  $0.52/hr                    ║
+╚══════════════════════════════════════════════════════╝
+
+ZERO IDLE COST (kuch nahi lagta jab use na ho):
+  ✅ S3          → storage: ~$0.023/GB/month
+  ✅ Lambda      → first 1M requests FREE
+  ✅ DynamoDB    → PAY_PER_REQUEST (idle = $0)
+  ✅ Glue Catalog→ first million objects FREE
+  ✅ Athena      → $5 per TB scanned
+  ✅ SNS         → first 1M emails FREE
+  ✅ CloudWatch  → basic monitoring FREE
+  ✅ Firehose    → $0.029/GB (sirf jab data bhejo)
+```
+
+**Session end karne pe yeh 3 commands:**
+```powershell
+aws kinesisanalyticsv2 stop-application --application-name ecomm-ddos-detector --region us-east-1
+aws kinesis delete-stream --stream-name ecomm-events-stream --region us-east-1
+aws kinesis delete-stream --stream-name ecomm-alerts-stream --region us-east-1
+```
 
 ---
 
-## ❓ Ek Cheez Jo Baaki Hai
+## 📁 REPOSITORY FILES — Har File Ka Kaam
 
-1. **Zeppelin SQL** — Flink RUNNING hai, Zeppelin me 3 SQL cells run karo
-   (Browser: AWS Console → Kinesis Analytics → ecomm-ddos-detector → Open Zeppelin)
-
-2. **QuickSight** — Console me Athena access enable karo (1 click)
-   phir: `python create_quicksight_datasets.py`
-
-3. **SNS Email** — mindofyaseen@gmail.com me confirmation link click karo
+```
+FILE                           KAAM
+─────────────────────────────────────────────────────────────────────
+2026-Jun-sample.csv          → Source data (100k eCommerce events)
+simulate_kinesis_stream.ipynb→ CSV → Kinesis ecomm-events-stream
+simulate_stream.ipynb        → CSV → Firehose ecomm-firehose-str
+run_kinesis.py               → CLI se Kinesis pipeline run karo
+run_firehose.py              → CLI se Firehose pipeline run karo
+lambda_alert_processor.py    → Lambda: alert → DynamoDB + CW + SNS
+etl_to_parquet.py            → Glue Job: CSV/JSON → Parquet
+create_quicksight_datasets.py→ QuickSight me 4 datasets register
+dashboard.json               → CloudWatch dashboard ka backup/export
+zeppelin_setup.py            → Flink SQL reference (browser me karna)
+glue-trust.json              → Glue IAM trust policy
+lambda-trust.json            → Lambda IAM trust policy
+qs-trust.json                → QuickSight IAM trust policy
+qs-policy.json               → QuickSight custom IAM policy
+SESSION_STARTUP.md           → Har session ka startup guide (CLI)
+PROJECT_FLOW.md              → Yeh file — poora system explained
+─────────────────────────────────────────────────────────────────────
+```
 
 ---
 
-*AWS eCommerce Analytics | Muhammad Yaseen | us-east-1 | 2026*
+## ✅ ABHI KA LIVE STATUS (2026-07-29)
+
+```
+SERVICE                    STATUS      DETAIL
+──────────────────────────────────────────────────────────────────
+ecomm-events-stream        ✅ ACTIVE   4 shards, ON_DEMAND
+ecomm-alerts-stream        ✅ ACTIVE   4 shards, ON_DEMAND
+ecomm-firehose-str         ✅ ACTIVE   DirectPut → S3
+ecomm-ddos-detector        ✅ RUNNING  Zeppelin-Flink-3.0
+ecomm-alert-processor      ✅ Active   Python 3.12, trigger Enabled
+ecomm-suspicious-users     ✅ ACTIVE   6 items stored
+ecomm-ddos-alerts (SNS)    ⚠️ PENDING  Email confirmation baaki
+ecomm-ddos-monitor (CW)    ✅ Active   4 widgets
+ecomm_flink_db (Glue)      ✅ Active   4 tables + 4 views
+S3 raw-stream/             ✅ Active   11.7 KiB file today
+S3 processed/ (Parquet)    ✅ Active   100k rows partitioned
+Athena views               ✅ Active   All 4 views working
+QuickSight                 ⚠️ PENDING  Athena access step baaki
+──────────────────────────────────────────────────────────────────
+```
+
+---
+
+*AWS eCommerce Analytics Platform | Muhammad Yaseen | us-east-1*
+*Last Updated: 2026-07-29 | All values are actual live AWS readings*
