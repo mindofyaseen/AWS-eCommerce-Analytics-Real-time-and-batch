@@ -2,58 +2,46 @@
 
 An end-to-end data engineering platform built on AWS. The platform ingests, processes, and analyzes high-throughput eCommerce clickstream events across two analytical pipelines: **Real-Time Anomaly Detection** and **Batch Historical Analytics**.
 
+
+---
+
+## 📚 Quick Links & Manual Run Guide
+- 📖 [PROJECT_FLOW.md](file:///c:/Users/mindo/Documents/Boto/PROJECT_FLOW.md) - Detailed Architecture Flow & Service Status
+- 🚀 [MANUAL_RUN_GUIDE.md](file:///c:/Users/mindo/Documents/Boto/MANUAL_RUN_GUIDE.md) - **Step-by-Step UI & CLI Run Guide (Web Console & Python)**
+
 ---
 
 ## 🏛 Architecture Diagram
 
-![Architecture Diagram](Changed_Architecture_Diagram.png)
+![Architecture Diagram](Architecture.png)
 
 ---
 
-## 🔄 Data Flow
-
-### Real-Time Pipeline (DDoS / Bot Detection)
+## 🔄 Real-Time Data Flow (Flink + Direct AWS Glue Integration)
 ```
-Python App (simulate_kinesis_stream.ipynb)
+Python App (run_kinesis.py / simulate_kinesis_stream.ipynb)
        │
        ▼
-Kinesis Data Stream (ecomm-events-stream)  ◄── also → Firehose → S3 raw-stream/
+Kinesis Data Stream (ecomm-events-stream)
        │
        ▼
-Apache Flink — ecomm-ddos-detector (Zeppelin)
+Apache Flink — ecomm-ddos-detector (Zeppelin / Flink SQL)
 [1-min tumbling window: flag users with >5 events/min]
        │
-       ▼
-Kinesis Data Stream (ecomm-alerts-stream)
-       │
-       ▼
-AWS Lambda (ecomm-alert-processor)
+       ├──────────────────────────────────────────┐
+       │ (Real-Time Anomaly Branch)               │ (Direct Glue Catalog & Analytics Branch)
+       ▼                                          ▼
+Kinesis Data Stream (ecomm-alerts-stream)   AWS Glue Data Catalog (ecomm_flink_db)
+       │                                          │
+       ▼                                          ▼
+AWS Lambda (ecomm-alert-processor)           Amazon Athena & QuickSight
        │
    ┌───┼──────────┐
    ▼   ▼          ▼
 DynamoDB  CloudWatch  SNS (Email Alert)
-(ecomm-suspicious-users)  (ecomm-ddos-monitor)
+(ecomm-suspicious-users)
 ```
 
-### Batch Pipeline (Historical Analytics)
-```
-Amazon Data Firehose (ecomm-firehose-str)
-       │
-       ▼
-S3 raw-stream/ (GZIP JSON)
-       │
-       ▼
-AWS Glue Crawlers → ecomm_flink_db catalog
-       │
-       ▼
-Glue ETL Job (etl_to_parquet.py → Snappy Parquet, partitioned by event_type)
-       │
-       ▼
-Amazon Athena (4 analytical views)
-       │
-       ▼
-Amazon QuickSight (Dashboards)
-```
 
 ---
 
