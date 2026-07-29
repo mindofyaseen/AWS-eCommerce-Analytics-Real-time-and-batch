@@ -16,46 +16,57 @@ def lambda_handler(event, context):
     processed = 0
 
     for record in event["Records"]:
-        raw = base64.b64decode(record["kinesis"]["data"]).decode("utf-8")
-        payload = json.loads(raw)
+        try:
+            raw = base64.b64decode(record["kinesis"]["data"]).decode("utf-8")
+            payload = json.loads(raw)
 
-        user_id = str(payload.get("user_id", "unknown"))
-        event_count = int(payload.get("event_count", 0))
-        window_start = str(payload.get("window_start", ""))
-        window_end = str(payload.get("window_end", ""))
-        flagged_at = datetime.now(timezone.utc).isoformat()
+            user_id = str(payload.get("user_id", "unknown"))
+            event_count = int(payload.get("event_count", 0))
+            window_start = str(payload.get("window_start", ""))
+            window_end = str(payload.get("window_end", ""))
+            flagged_at = datetime.now(timezone.utc)  # datetime object (not string)
 
-        table.put_item(Item={
-            "user_id": user_id,
-            "window_start": window_start,
-            "event_count": event_count,
-            "window_end": window_end,
-            "flagged_at": flagged_at,
-        })
+            # DynamoDB — store flagged user
+            table.put_item(Item={
+                "user_id": user_id,
+                "window_start": window_start,
+                "event_count": event_count,
+                "window_end": window_end,
+                "flagged_at": flagged_at.isoformat(),
+            })
 
-        cloudwatch.put_metric_data(
-            Namespace="eComm/DDoS",
-            MetricData=[{
-                "MetricName": "SuspiciousUserEvents",
-                "Dimensions": [{"Name": "user_id", "Value": user_id}],
-                "Value": float(event_count),
-                "Unit": "Count",
-                "Timestamp": flagged_at,
-            }],
-        )
+            # CloudWatch — Timestamp must be datetime object, NOT a string
+            cloudwatch.put_metric_data(
+                Namespace="eComm/DDoS",
+                MetricData=[{
+                    "MetricName": "SuspiciousUserEvents",
+                    "Dimensions": [{"Name": "user_id", "Value": user_id}],
+                    "Value": float(event_count),
+                    "Unit": "Count",
+                    "Timestamp": flagged_at,  # datetime object — boto3 requirement
+                }],
+            )
 
-        sns.publish(
-            TopicArn=TOPIC_ARN,
-            Subject=f"DDoS Alert: User {user_id} flagged",
-            Message=(
-                f"Suspicious activity detected!\n\n"
-                f"User ID    : {user_id}\n"
-                f"Event Count: {event_count} events in 1 minute\n"
-                f"Window     : {window_start} -> {window_end}\n"
-                f"Flagged At : {flagged_at}\n"
-            ),
-        )
+            # SNS — email alert
+            sns.publish(
+                TopicArn=TOPIC_ARN,
+                Subject=f"DDoS Alert: User {user_id} flagged",
+                Message=(
+                    f"Suspicious activity detected!\n\n"
+                    f"User ID    : {user_id}\n"
+                    f"Event Count: {event_count} events in 1 minute\n"
+                    f"Window     : {window_start} -> {window_end}\n"
+                    f"Flagged At : {flagged_at.isoformat()}\n"
+                ),
+            )
 
-        processed += 1
+            processed += 1
+            print(f"[OK] Processed user_id={user_id}, event_count={event_count}")
+
+        except Exception as e:
+            print(f"[ERROR] Failed to process record: {e}")
+            # Continue processing remaining records
+            continue
 
     return {"statusCode": 200, "processed": processed}
+

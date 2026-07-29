@@ -1,104 +1,182 @@
 # Build an Analytical Platform for eCommerce using AWS Services
 
-An end-to-end data engineering platform built on AWS following the official **ProjectPro Reference Architecture**. The platform ingests, processes, and analyzes high-throughput eCommerce clickstream events across two analytical pipelines: Real-Time Anomaly Detection and Batch Historical Analytics.
+An end-to-end data engineering platform built on AWS. The platform ingests, processes, and analyzes high-throughput eCommerce clickstream events across two analytical pipelines: **Real-Time Anomaly Detection** and **Batch Historical Analytics**.
 
 ---
 
-## 🏛 Official Architecture Diagram
+## 🏛 Architecture Diagram
 
-![Architecture Diagram](Architecture_Diagram.png)
+![Architecture Diagram](Changed_Architecture_Diagram.png)
+
+---
+
+## 🔄 Data Flow
+
+### Real-Time Pipeline (DDoS / Bot Detection)
+```
+Python App (simulate_kinesis_stream.ipynb)
+       │
+       ▼
+Kinesis Data Stream (ecomm-events-stream)  ◄── also → Firehose → S3 raw-stream/
+       │
+       ▼
+Apache Flink — ecomm-ddos-detector (Zeppelin)
+[1-min tumbling window: flag users with >5 events/min]
+       │
+       ▼
+Kinesis Data Stream (ecomm-alerts-stream)
+       │
+       ▼
+AWS Lambda (ecomm-alert-processor)
+       │
+   ┌───┼──────────┐
+   ▼   ▼          ▼
+DynamoDB  CloudWatch  SNS (Email Alert)
+(ecomm-suspicious-users)  (ecomm-ddos-monitor)
+```
+
+### Batch Pipeline (Historical Analytics)
+```
+Amazon Data Firehose (ecomm-firehose-str)
+       │
+       ▼
+S3 raw-stream/ (GZIP JSON)
+       │
+       ▼
+AWS Glue Crawlers → ecomm_flink_db catalog
+       │
+       ▼
+Glue ETL Job (etl_to_parquet.py → Snappy Parquet, partitioned by event_type)
+       │
+       ▼
+Amazon Athena (4 analytical views)
+       │
+       ▼
+Amazon QuickSight (Dashboards)
+```
 
 ---
 
 ## 🛠 Tech Stack & AWS Services
 
-* **Languages:** Python 3, SQL, PySpark
-* **Data Simulation & Ingestion:** Python Boto3 (VS Code), Amazon Kinesis Data Streams, Amazon Data Firehose
-* **Stream Processing Engine:** Amazon Kinesis Data Analytics (Managed Apache Flink 1.15 / Apache Zeppelin)
-* **Serverless Compute:** AWS Lambda (Python 3.12)
-* **Data Storage & Database:** Amazon S3 (Data Lake), Amazon DynamoDB (NoSQL - Pay-Per-Request)
-* **Data Integration & Catalog:** AWS Glue Data Catalog, AWS Glue Crawlers, AWS Glue PySpark ETL / DataBrew
-* **Query Engine & BI:** Amazon Athena, Amazon QuickSight
-* **Monitoring & Alerting:** Amazon CloudWatch Dashboards, Amazon SNS (Email Alerts)
+| Layer | Service |
+|-------|---------|
+| **Ingestion** | Amazon Kinesis Data Streams, Amazon Data Firehose |
+| **Stream Processing** | Amazon Managed Service for Apache Flink (Zeppelin 3.0) |
+| **Serverless Compute** | AWS Lambda (Python 3.12) |
+| **Storage** | Amazon S3 (Data Lake), Amazon DynamoDB (NoSQL) |
+| **Batch ETL** | AWS Glue Crawlers, AWS Glue PySpark ETL |
+| **Query Engine** | Amazon Athena |
+| **BI Dashboard** | Amazon QuickSight |
+| **Monitoring & Alerts** | Amazon CloudWatch, Amazon SNS |
+| **Languages** | Python 3, SQL, PySpark |
 
 ---
 
-## ⚡ Data Flow & Pipeline Architecture
+## 📂 Repository Structure
 
-### 1. Real-Time DDoS & Bot Detection Pipeline
-1. **Simulation App:** Local Python application (`simulate_kinesis_stream.ipynb`) streams user behavioral events (views, cart, purchases, removals) to Amazon Kinesis Data Streams (`ecomm-events-stream`).
-2. **Stream Processing (Apache Flink):** Kinesis Data Analytics application (`ecomm-ddos-detector`) executes 1-minute tumbling window SQL queries to flag users generating > 5 events per minute:
-   ```sql
-   INSERT INTO ecomm_alerts_sink
-   SELECT user_id, COUNT(*) AS event_count,
-          TUMBLE_START(event_arrival_time, INTERVAL '1' MINUTE) AS window_start,
-          TUMBLE_END(event_arrival_time, INTERVAL '1' MINUTE) AS window_end
-   FROM ecomm_events
-   GROUP BY user_id, TUMBLE(event_arrival_time, INTERVAL '1' MINUTE)
-   HAVING COUNT(*) > 5
-   ```
-3. **Alert Stream:** Flink outputs detected anomalies to `ecomm-alerts-stream`.
-4. **Lambda Event Handler:** AWS Lambda (`ecomm-alert-processor`) is triggered automatically and executes three downstream actions:
-   - **Amazon DynamoDB:** Stores flagged user ID and window timestamps in `ecomm-suspicious-users`.
-   - **Amazon CloudWatch:** Publishes metric `eComm/DDoS:SuspiciousUserEvents` to dashboard `ecomm-ddos-monitor`.
-   - **Amazon SNS:** Dispatches email alert notifications to subscribers.
-
-### 2. Raw Persistence & Batch Analytics Pipeline
-1. **Firehose Stream:** Amazon Data Firehose (`ecomm-firehose-str`) buffers incoming streaming events with GZIP compression into Amazon S3 (`s3://ecomm-analytics-yaseen-2026/raw-stream/`).
-2. **Glue Catalog & ETL:** AWS Glue Crawlers populate the catalog metastore (`ecomm_flink_db`). PySpark ETL script `etl_to_parquet.py` cleans data and writes Snappy-compressed Parquet files to `s3://ecomm-analytics-yaseen-2026/processed/events/` partitioned by `event_type`.
-3. **Athena & QuickSight:** Amazon Athena queries 4 analytical views:
-   - `v_unique_visitors_daily`: Daily unique visitors
-   - `v_cart_abandonment`: Cart abandonment percentage (~85.4%)
-   - `v_top_categories_hourly`: Hourly top product categories
-   - `v_brand_insights`: Brand marketing performance
-   QuickSight connects via Athena DirectQuery to render visual dashboards.
-
----
-
-## 📂 Repository File Structure
-
-```text
-├── 2026-Jun-sample.csv          # Synthetic eCommerce clickstream dataset (~100k events)
-├── Architecture_Diagram.png     # ProjectPro Architecture Diagram
-├── Changed_Architecture_Diagram.png # High-res Reference Architecture Diagram
-├── simulate_kinesis_stream.ipynb# Real-time event generator for Kinesis Data Stream
-├── simulate_stream.ipynb        # Event generator for Amazon Data Firehose
-├── etl_to_parquet.py            # AWS Glue PySpark ETL job (Raw JSON -> Partitioned Parquet)
-├── lambda_alert_processor.py    # AWS Lambda function for real-time anomaly processing
-├── create_quicksight_datasets.py# Programmatic QuickSight dataset registration script
-├── dashboard.json               # CloudWatch DDoS monitoring dashboard export
-├── zeppelin_setup.py            # Flink Zeppelin notebook SQL configuration helper
-├── glue-trust.json              # IAM trust policy for AWS Glue
-├── lambda-trust.json            # IAM trust policy for AWS Lambda
-├── qs-trust.json                # IAM trust policy for Amazon QuickSight
-└── qs-policy.json               # IAM inline policy for QuickSight Athena + S3 access
+```
+├── 2026-Jun-sample.csv              # Synthetic eCommerce clickstream dataset (~100k events)
+├── Changed_Architecture_Diagram.png # Architecture Diagram
+├── SESSION_STARTUP.md               # ⭐ Session startup guide (CLI commands)
+├── simulate_kinesis_stream.ipynb    # Real-time event generator → Kinesis Stream
+├── simulate_stream.ipynb            # Event generator → Amazon Data Firehose
+├── lambda_alert_processor.py        # Lambda: DynamoDB + CloudWatch + SNS
+├── etl_to_parquet.py                # Glue PySpark ETL: JSON → Parquet
+├── create_quicksight_datasets.py    # QuickSight dataset registration
+├── dashboard.json                   # CloudWatch dashboard config
+├── zeppelin_setup.py                # Flink SQL reference (Zeppelin setup)
+├── glue-trust.json                  # IAM trust policy — Glue
+├── lambda-trust.json                # IAM trust policy — Lambda
+├── qs-trust.json                    # IAM trust policy — QuickSight
+└── qs-policy.json                   # IAM inline policy — QuickSight Athena+S3
 ```
 
 ---
 
 ## 🚀 How to Run End-to-End
 
-### Step 1: Start AWS Streaming Services
-1. In AWS Kinesis Console, create On-Demand streams `ecomm-events-stream` and `ecomm-alerts-stream`.
-2. Enable the Kinesis trigger on AWS Lambda `ecomm-alert-processor`.
-3. Start Kinesis Analytics Studio app `ecomm-ddos-detector` and run Flink SQL cells in Apache Zeppelin.
+> See [SESSION_STARTUP.md](SESSION_STARTUP.md) for full step-by-step CLI commands.
 
-### Step 2: Stream Data from VS Code
-Run `simulate_kinesis_stream.ipynb` locally to push synthetic clickstream traffic into `ecomm-events-stream`.
+### Step 1: Start Streaming Infrastructure (AWS CLI — PowerShell)
+```powershell
+# Create Kinesis Streams (ephemeral — recreate each session)
+aws kinesis create-stream --stream-name ecomm-events-stream --stream-mode-details StreamMode=ON_DEMAND --region us-east-1
+aws kinesis create-stream --stream-name ecomm-alerts-stream --stream-mode-details StreamMode=ON_DEMAND --region us-east-1
 
-### Step 3: Verify Real-Time Detection
-* Check **DynamoDB** table `ecomm-suspicious-users` for flagged bot entries.
-* View **CloudWatch** dashboard `ecomm-ddos-monitor` for real-time metric spikes.
-* Check **SNS Email Inbox** for attack notification alerts.
+# Re-enable Lambda trigger
+aws lambda update-event-source-mapping --uuid 5b61f29c-44d5-4164-a8bc-10ceeb3f3d98 --enabled --region us-east-1
+
+# Start Flink Studio Notebook
+aws kinesisanalyticsv2 start-application --application-name ecomm-ddos-detector --region us-east-1
+```
+
+### Step 2: Configure Flink SQL (Apache Zeppelin — Browser)
+1. Open AWS Console → Kinesis Analytics → `ecomm-ddos-detector` → **Open Apache Zeppelin**
+2. Run 3 SQL cells: Source table → Sink table → INSERT anomaly detection
+
+### Step 3: Stream Data from VS Code
+```
+Run: simulate_kinesis_stream.ipynb  → sends to ecomm-events-stream
+Run: simulate_stream.ipynb          → sends to Firehose → S3
+```
+
+### Step 4: Verify Results
+- **DynamoDB** `ecomm-suspicious-users` → flagged bot entries appear
+- **CloudWatch** `ecomm-ddos-monitor` → real-time metric spikes
+- **Email** `mindofyaseen@gmail.com` → SNS DDoS alert notifications
+- **S3** `raw-stream/` → GZIP files from Firehose
 
 ---
 
-## 💰 Cost Teardown Strategy
-When pausing work, stop resources that bill per hour:
-* **Stop Flink Studio:** Kinesis Console $\rightarrow$ Analytics Applications $\rightarrow$ `ecomm-ddos-detector` $\rightarrow$ Stop.
-* **Delete Kinesis Streams:** Kinesis Console $\rightarrow$ Data Streams $\rightarrow$ Delete `ecomm-events-stream` & `ecomm-alerts-stream`.
+## 💡 Flink Anomaly Detection Logic
 
-All other resources (S3, Glue Data Catalog, Lambda, DynamoDB Pay-Per-Request, CloudWatch, SNS, Athena) have **$0 idle cost**.
+```sql
+-- Users with >5 events in a 1-minute window are flagged as suspicious
+INSERT INTO ecomm_alerts_sink
+SELECT
+    user_id,
+    COUNT(*) AS event_count,
+    TUMBLE_START(event_arrival_time, INTERVAL '1' MINUTE) AS window_start,
+    TUMBLE_END(event_arrival_time, INTERVAL '1' MINUTE) AS window_end
+FROM ecomm_events
+GROUP BY user_id, TUMBLE(event_arrival_time, INTERVAL '1' MINUTE)
+HAVING COUNT(*) > 5
+```
 
 ---
-*Based on ProjectPro AWS eCommerce Analytics Architecture | Maintained by Muhammad Yaseen*
+
+## 📊 Athena Analytical Views
+
+| View | Insight |
+|------|---------|
+| `v_unique_visitors_daily` | Daily unique visitor count |
+| `v_cart_abandonment` | Cart abandonment rate (~85.4%) |
+| `v_top_categories_hourly` | Top product categories by hour |
+| `v_brand_insights` | Brand marketing performance |
+
+---
+
+## 💰 Cost Management
+
+**Ephemeral (delete each session):** Flink Studio + On-Demand Kinesis Streams → hourly billing
+```powershell
+aws kinesisanalyticsv2 stop-application --application-name ecomm-ddos-detector --region us-east-1
+aws kinesis delete-stream --stream-name ecomm-events-stream --region us-east-1
+aws kinesis delete-stream --stream-name ecomm-alerts-stream --region us-east-1
+```
+
+**Zero idle cost:** S3, Glue Catalog, Lambda, DynamoDB (Pay-Per-Request), CloudWatch, SNS, Athena
+
+---
+
+## AWS Environment
+
+- **Account:** 989864147584
+- **Region:** us-east-1 (N. Virginia)
+- **S3 Bucket:** `ecomm-analytics-yaseen-2026`
+- **Glue DB:** `ecomm_flink_db`
+
+---
+
+*AWS eCommerce Analytics Platform | Maintained by Muhammad Yaseen*
